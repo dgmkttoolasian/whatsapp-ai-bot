@@ -40,7 +40,7 @@ def get_order_status(order_id):
     return orders.get(order_id.upper(), "Order ID not found. Please double-check and try again.")
 
 def get_ai_reply(history):
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + os.getenv("GEMINI_API_KEY")
+    url = "url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + os.getenv("GEMINI_API_KEY")"
     contents = []
     for msg in history:
         role = "model" if msg["role"] == "assistant" else "user"
