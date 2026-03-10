@@ -51,7 +51,10 @@ def get_ai_reply(history):
     }
     r = requests.post(url, json=payload)
     data = r.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    if "candidates" not in data:
+    print("Gemini error: " + str(data))
+    return "Sorry, AI is unavailable right now."
+return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 def handle_incoming(from_number, user_message):
     if from_number not in sessions:
