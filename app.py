@@ -40,21 +40,25 @@ def get_order_status(order_id):
     return orders.get(order_id.upper(), "Order ID not found. Please double-check and try again.")
 
 def get_ai_reply(history):
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + os.getenv("GEMINI_API_KEY")
-    contents = []
-    for msg in history:
-        role = "model" if msg["role"] == "assistant" else "user"
-        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-    payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": contents
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": "Bearer " + os.getenv("GROQ_API_KEY"),
+        "Content-Type": "application/json"
     }
-    r = requests.post(url, json=payload)
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for msg in history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": messages,
+        "max_tokens": 500
+    }
+    r = requests.post(url, json=payload, headers=headers)
     data = r.json()
-    if "candidates" not in data:
-        print("Gemini error: " + str(data))
+    if "choices" not in data:
+        print("Groq error: " + str(data))
         return "Sorry, AI is unavailable right now."
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    return data["choices"][0]["message"]["content"].strip()
 
 def handle_incoming(from_number, user_message):
     if from_number not in sessions:
