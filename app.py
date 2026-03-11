@@ -3,8 +3,10 @@ from twilio.twiml.messaging_response import MessagingResponse
 import requests
 import os
 import json
-import base64
 import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
@@ -23,12 +25,12 @@ ABOUT THE COMPANY:
 - We export to USA, UK, UAE, Africa, South America, Korea and more
 
 PRODUCTS WE MANUFACTURE:
-- PP Woven Bags: Made from polypropylene woven fabric. Strong and durable. Used for cement, fertilizer, food grains, agriculture products
+- PP Woven Bags: Strong and durable. Used for cement, fertilizer, food grains, agriculture products
 - BOPP Printed Bags: High-quality glossy printed bags for branded retail and premium packaging
 - Paper Laminated Bags: Kraft paper outer with woven inner layer. Used for cement and chemical packaging
 - Non-Woven Bags: Used for retail, gifting, grocery, and promotional purposes
-- HDPE/LD Film Rolls: Used as inner liners or standalone packaging films for industrial and agricultural products
-- Back Seam Bags: Stitched along back seam, flat clean surface ideal for full-face printing
+- HDPE/LD Film Rolls: Used as inner liners or standalone packaging films
+- Back Seam Bags: Flat clean surface ideal for full-face printing
 - Poly-coated Papers: For industrial packaging needs
 
 INDUSTRIES WE SERVE:
@@ -83,10 +85,7 @@ def get_google_creds():
     creds_dict = json.loads(creds_json)
     creds = service_account.Credentials.from_service_account_info(
         creds_dict,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/gmail.send"
-        ]
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     return creds
 
@@ -97,10 +96,10 @@ def log_to_sheet(phone, conversation):
         service = build("sheets", "v4", credentials=creds)
         sheet_id = os.getenv("GOOGLE_SHEET_ID")
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        values = [[timestamp, phone, conversation, "Yes", "New Lead"]]
+        values = [[timestamp, phone, conversation, "New Lead"]]
         service.spreadsheets().values().append(
             spreadsheetId=sheet_id,
-            range="Sheet1!A:E",
+            range="Sheet1!A:D",
             valueInputOption="RAW",
             body={"values": values}
         ).execute()
@@ -111,30 +110,22 @@ def log_to_sheet(phone, conversation):
 
 def send_email(phone, conversation):
     try:
-        import smtplib
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
-
         sender = os.getenv("NOTIFY_EMAIL")
         password = os.getenv("EMAIL_PASSWORD")
-        receiver = os.getenv("NOTIFY_EMAIL")
-
         msg = MIMEMultipart()
         msg["From"] = sender
-        msg["To"] = receiver
+        msg["To"] = sender
         msg["Subject"] = "New Lead from WhatsApp - ToolAsian Bot"
-
         body = "New lead received!\n\nCustomer Phone: " + phone + "\n\nConversation:\n" + conversation + "\n\nCheck your Google Sheet for all leads."
         msg.attach(MIMEText(body, "plain"))
-
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(sender, password)
-        server.sendmail(sender, receiver, msg.as_string())
+        server.sendmail(sender, sender, msg.as_string())
         server.quit()
-        print("Email sent to " + receiver)
+        print("Email sent successfully")
     except Exception as e:
-        print("Email error: " + str(e))                                                                                                                                                                                                                                       
+        print("Email error: " + str(e))
 
 
 def get_conversation_summary(from_number):
@@ -180,14 +171,14 @@ def handle_incoming(from_number, user_message):
             conversation = get_conversation_summary(from_number)
             log_to_sheet(from_number, conversation)
             send_email(from_number, conversation)
-            reply = "Thank you! Our sales team will contact you within 24 hours. For urgent queries call us directly at +91-XXXXXXXXXX"
+            reply = "Thank you! Our sales team will contact you within 24 hours. For urgent queries call us at +91-XXXXXXXXXX"
             print("Lead captured for: " + from_number)
             sessions[from_number] = []
         sessions[from_number].append({"role": "assistant", "content": reply})
         return reply
     except Exception as e:
         print("AI Error: " + str(e))
-        return "Sorry, I am facing some technical issues right now. Please try again in a moment!"
+        return "Sorry, I am facing some technical issues. Please try again in a moment!"
 
 
 @app.route("/webhook", methods=["POST"])
@@ -208,5 +199,5 @@ def home():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
-    print("Bot running on port " + str(port))        
+    print("Bot running on port " + str(port))
     app.run(host="0.0.0.0", port=port)
