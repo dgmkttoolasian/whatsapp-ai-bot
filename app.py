@@ -2,6 +2,11 @@ from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 import requests
 import os
+import json
+import base64
+import datetime
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -72,8 +77,64 @@ IMPORTANT RULES:
 - Keep replies short and clear
 - If you do not know something, say our team will get back to you shortly"""
 
-def get_order_status(order_id):
-    return "Please contact our team for order status. They will update you shortly."
+
+def get_google_creds():
+    creds_json = os.getenv("GOOGLE_CREDS_JSON")
+    creds_dict = json.loads(creds_json)
+    creds = service_account.Credentials.from_service_account_info(
+        creds_dict,
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/gmail.send"
+        ]
+    )
+    return creds
+
+
+def log_to_sheet(phone, conversation):
+    try:
+        creds = get_google_creds()
+        service = build("sheets", "v4", credentials=creds)
+        sheet_id = os.getenv("GOOGLE_SHEET_ID")
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        values = [[timestamp, phone, conversation, "Yes", "New Lead"]]
+        service.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="Sheet1!A:E",
+            valueInputOption="RAW",
+            body={"values": values}
+        ).execute()
+        print("Lead logged to Google Sheet")
+    except Exception as e:
+        print("Sheet error: " + str(e))
+
+
+def send_email(phone, conversation):
+    try:
+        creds = get_google_creds()
+        service = build("gmail", "v1", credentials=creds)
+        to_email = os.getenv("NOTIFY_EMAIL")
+        subject = "New Lead from WhatsApp - ToolAsian Bot"
+        body = "New lead received!\n\nCustomer Phone: " + phone + "\n\nConversation:\n" + conversation + "\n\nLogin to Google Sheet to view all leads."
+        message_text = "To: " + to_email + "\nSubject: " + subject + "\n\n" + body
+        encoded = base64.urlsafe_b64encode(message_text.encode()).decode()
+        service.users().messages().send(
+            userId="me",
+            body={"raw": encoded}
+        ).execute()
+        print("Email sent to " + to_email)
+    except Exception as e:
+        print("Email error: " + str(e))
+
+
+def get_conversation_summary(from_number):
+    history = sessions.get(from_number, [])
+    summary = ""
+    for msg in history:
+        role = "Customer" if msg["role"] == "user" else "Bot"
+        summary += role + ": " + msg["content"] + "\n"
+    return summary
+
 
 def get_ai_reply(history):
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -96,6 +157,7 @@ def get_ai_reply(history):
         return "Sorry, AI is unavailable right now."
     return data["choices"][0]["message"]["content"].strip()
 
+
 def handle_incoming(from_number, user_message):
     if from_number not in sessions:
         sessions[from_number] = []
@@ -104,19 +166,19 @@ def handle_incoming(from_number, user_message):
         sessions[from_number] = sessions[from_number][-10:]
     try:
         reply = get_ai_reply(sessions[from_number])
-        if "TRACK_ORDER:" in reply:
-            order_id = reply.split("TRACK_ORDER:")[1].split("\n")[0].strip()
-            status = get_order_status(order_id)
-            reply = "Here is your order status for " + order_id + ":\n\n" + status
         if "ESCALATE_TO_HUMAN" in reply:
-            reply = "I am connecting you with a human agent right now. Someone will get back to you within 15 minutes. Sorry for the trouble!"
-            print("ESCALATION NEEDED - Customer: " + from_number)
+            conversation = get_conversation_summary(from_number)
+            log_to_sheet(from_number, conversation)
+            send_email(from_number, conversation)
+            reply = "Thank you! Our sales team will contact you within 24 hours. For urgent queries call us directly at +91-XXXXXXXXXX"
+            print("Lead captured for: " + from_number)
             sessions[from_number] = []
         sessions[from_number].append({"role": "assistant", "content": reply})
         return reply
     except Exception as e:
         print("AI Error: " + str(e))
         return "Sorry, I am facing some technical issues right now. Please try again in a moment!"
+
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -128,9 +190,11 @@ def webhook():
     resp.message(reply_text)
     return Response(str(resp), mimetype="application/xml")
 
+
 @app.route("/", methods=["GET"])
 def home():
     return "WhatsApp AI Bot is running!", 200
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
