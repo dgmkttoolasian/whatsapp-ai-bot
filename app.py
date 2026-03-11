@@ -111,20 +111,30 @@ def log_to_sheet(phone, conversation):
 
 def send_email(phone, conversation):
     try:
-        creds = get_google_creds()
-        service = build("gmail", "v1", credentials=creds)
-        to_email = os.getenv("NOTIFY_EMAIL")
-        subject = "New Lead from WhatsApp - ToolAsian Bot"
-        body = "New lead received!\n\nCustomer Phone: " + phone + "\n\nConversation:\n" + conversation + "\n\nLogin to Google Sheet to view all leads."
-        message_text = "To: " + to_email + "\nSubject: " + subject + "\n\n" + body
-        encoded = base64.urlsafe_b64encode(message_text.encode()).decode()
-        service.users().messages().send(
-            userId="me",
-            body={"raw": encoded}
-        ).execute()
-        print("Email sent to " + to_email)
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        sender = os.getenv("NOTIFY_EMAIL")
+        password = os.getenv("EMAIL_PASSWORD")
+        receiver = os.getenv("NOTIFY_EMAIL")
+
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = receiver
+        msg["Subject"] = "New Lead from WhatsApp - ToolAsian Bot"
+
+        body = "New lead received!\n\nCustomer Phone: " + phone + "\n\nConversation:\n" + conversation + "\n\nCheck your Google Sheet for all leads."
+        msg.attach(MIMEText(body, "plain"))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail(sender, receiver, msg.as_string())
+        server.quit()
+        print("Email sent to " + receiver)
     except Exception as e:
-        print("Email error: " + str(e))
+        print("Email error: " + str(e))                                                                                                                                                                                                                                       
 
 
 def get_conversation_summary(from_number):
@@ -198,5 +208,5 @@ def home():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
-    print("Bot running on port " + str(port))
+    print("Bot running on port " + str(port))        
     app.run(host="0.0.0.0", port=port)
