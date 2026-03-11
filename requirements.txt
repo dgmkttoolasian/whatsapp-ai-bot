@@ -1,5 +1,8 @@
 flask
 requests
 python-dotenv
-gunicorn
 twilio
+gunicorn
+google-auth
+google-api-python-client
+google-auth-httplib2
